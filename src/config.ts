@@ -14,6 +14,8 @@
  *   PI_MEMORY_INJECT_KNOWLEDGE             注入常识条数，默认 6
  *   PI_MEMORY_INJECT_PROJECT               注入项目记忆条数，默认 8
  *   PI_MEMORY_EXTRACT=0                    关闭会话 settle 后自动沉淀
+ *   PI_MEMORY_EXTRACT_MODEL                沉淀提取用模型 "provider/modelId" 或 "modelId"
+ *                                          （默认 llmproxy-anthropic/Haiku）；解析失败回退当前会话模型
  *   PI_MEMORY_EXTRACT_MIN_GAP_MS           两次沉淀最小间隔，默认 600000（10 分钟）
  *   PI_MEMORY_EXTRACT_MIN_NEW_USER_MSGS    触发沉淀的最少新增用户消息数，默认 2
  *   PI_MEMORY_EXTRACT_MAX_CHARS            送入提取器的对话字符上限，默认 12000
@@ -47,6 +49,8 @@ export interface MemoryConfig {
 	injectProject: number;
 	/** 会话 settle 后 LLM 自动沉淀 */
 	extract: boolean;
+	/** 沉淀提取用模型："provider/modelId" 或 "modelId"；解析失败回退当前会话模型 */
+	extractModel?: string;
 	extractMinGapMs: number;
 	extractMinNewUserMsgs: number;
 	extractMaxChars: number;
@@ -84,6 +88,7 @@ export function loadConfig(): MemoryConfig {
 		injectKnowledge: intEnv("PI_MEMORY_INJECT_KNOWLEDGE", 6, 0),
 		injectProject: intEnv("PI_MEMORY_INJECT_PROJECT", 8, 0),
 		extract: boolEnv("PI_MEMORY_EXTRACT", true),
+		extractModel: process.env.PI_MEMORY_EXTRACT_MODEL?.trim() || "llmproxy-anthropic/Haiku",
 		extractMinGapMs: intEnv("PI_MEMORY_EXTRACT_MIN_GAP_MS", 600_000, 0),
 		extractMinNewUserMsgs: intEnv("PI_MEMORY_EXTRACT_MIN_NEW_USER_MSGS", 2, 0),
 		extractMaxChars: intEnv("PI_MEMORY_EXTRACT_MAX_CHARS", 12_000, 500),

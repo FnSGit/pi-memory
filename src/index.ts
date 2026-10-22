@@ -11,7 +11,7 @@
  *              / memory_list（sidecar 直读，零开销）
  *   2. 自动注入：首个 run 前把偏好/常识/项目记忆以 <user_memory> section 进系统提示
  *              （sidecar 直读，不触发 embedding 模型）
- *   3. 自动沉淀：agent_settled 后由当前模型提取新对话中的持久记忆，去重后入库
+ *   3. 自动沉淀：agent_settled 后由提取模型（默认 Haiku，可配置）提取新对话中的持久记忆，去重后入库
  *
  * 进程架构：pi 以 bun 单文件运行、extension 经 jiti 加载，transformers/ruvector
  * 原生依赖无法在 jiti 内加载（NameTooLong），故向量与 embedding 全部在独立

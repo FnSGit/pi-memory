@@ -31,7 +31,7 @@ pi (bun 单文件, jiti 加载)                node worker 子进程
 
 1. **手动工具**：`memory_save` / `memory_search` / `memory_forget`（走 worker）、`memory_list`（直读索引）
 2. **自动注入**：会话首个 run 前，把偏好/常识/项目记忆以 `<user_memory>` section 注入系统提示（只读 sidecar，零 embedding 开销，每类条数可配）
-3. **自动沉淀**：`agent_settled` 后把本段新对话交给当前模型提取持久记忆，去重（相似度 ≥ 0.90 判重）后入库；节流：默认 10 分钟最小间隔 + 至少 2 条新增用户消息；print/json 模式不跑
+3. **自动沉淀**：`agent_settled` 后把本段新对话交给提取模型（默认 `llmproxy-anthropic/Haiku`，`PI_MEMORY_EXTRACT_MODEL` 可覆盖）提取持久记忆，去重（相似度 ≥ 0.90 判重）后入库；节流：默认 10 分钟最小间隔 + 至少 2 条新增用户消息；print/json 模式不跑
 
 ## 存储布局
 
@@ -59,6 +59,7 @@ pi (bun 单文件, jiti 加载)                node worker 子进程
 | `PI_MEMORY_INJECT=0` | 开 | 关闭会话注入 |
 | `PI_MEMORY_INJECT_PREFS/KNOWLEDGE/PROJECT` | 10/6/8 | 注入条数 |
 | `PI_MEMORY_EXTRACT=0` | 开 | 关闭自动沉淀 |
+| `PI_MEMORY_EXTRACT_MODEL` | `llmproxy-anthropic/Haiku` | 沉淀提取用模型，`provider/modelId` 或 `modelId`；未配置/畸形/未找到时回退当前会话模型（原因进 debug log） |
 | `PI_MEMORY_EXTRACT_MIN_GAP_MS` | 600000 | 沉淀最小间隔 |
 | `PI_MEMORY_EXTRACT_MIN_NEW_USER_MSGS` | 2 | 触发沉淀的最少新用户消息 |
 | `PI_MEMORY_EXTRACT_MAX_CHARS` | 12000 | 送入提取器的对话上限 |
@@ -81,6 +82,6 @@ node test/worker-smoke.ts  # worker/client 协议冒烟
 - **去重阈值 0.90 偏保守**：完全相同 ≈1.0 拦截，同义改写 ≈0.85 不判重（误留重复可 `memory_forget`，误删真记忆不可逆）。校准值见 `src/store.ts` 的 `DEDUP_THRESHOLD`
 - **score 语义**：ruvector Cosine 返回距离（1−相似度），store 已统一转为相似度（越高越相关）
 - **多会话并行写**：sidecar 有 mtime 新鲜度检查 + 原子写，跨会话丢更新窗口极小但非零；向量库插入不受影响
-- **自动沉淀成本**：用当前会话模型，每次沉淀一次 LLM 调用（受节流约束）；其 token 不计入会话用量统计
+- **自动沉淀成本**：用提取模型（默认 Haiku，可用 `PI_MEMORY_EXTRACT_MODEL` 换成 Sonnet/Opus 等），每次沉淀一次 LLM 调用（受节流约束）；其 token 不计入会话用量统计
 - **换模型**：改 `PI_MEMORY_MODEL` + `PI_MEMORY_DIMS`，并删除 `~/.pi/agent/pi-memory/` 下旧 `.db`/`.index.json` 重建
 - **首次模型下载**：需要网络。代理用户可 `NODE_USE_ENV_PROXY=1`（Node 24）前置启动 pi，或设 `PI_MEMORY_HF_ENDPOINT=https://hf-mirror.com`；下载后离线可用

@@ -1,6 +1,7 @@
 /**
- * 自动沉淀：agent_settled（自动处理真正结束）后，把本段新增对话交给
- * 当前会话模型提取持久记忆，经 embedding 去重后入库（source=auto）。
+ * 自动沉淀：agent_settled（自动处理真正结束）后，把本段新增对话交给提取模型
+ * （默认 llmproxy-anthropic/Haiku，PI_MEMORY_EXTRACT_MODEL 可覆盖）提取持久记忆，
+ * 经 embedding 去重后入库（source=auto）。
  *
  * 节流与安全阀：
  *   - 最小间隔 + 最少新增用户消息数，避免频繁 LLM 调用
@@ -8,6 +9,7 @@
  *   - running 互斥；print/json 模式不跑（一次性会话无沉淀价值）
  *   - LLM 调用带超时；异常只进 debug log
  */
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { MemoryConfig } from "./config.ts";
 import type { DebugLog } from "./config.ts";
@@ -40,17 +42,33 @@ interface ExtractItem {
 	tags?: unknown;
 }
 
-function parseItems(text: string): ExtractItem[] {
+function parseItems(text: string): ExtractItem[] | null {
 	const cleaned = text.replace(/```[a-z]*\n?/gi, "");
 	const start = cleaned.indexOf("[");
 	const end = cleaned.lastIndexOf("]");
-	if (start === -1 || end <= start) return [];
+	// 无 JSON 数组结构 / 解析失败 / 非数组：返回 null，与"模型合理地输出 []"区分，便于记日志
+	if (start === -1 || end <= start) return null;
 	try {
 		const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1));
-		return Array.isArray(parsed) ? (parsed as ExtractItem[]) : [];
+		return Array.isArray(parsed) ? (parsed as ExtractItem[]) : null;
 	} catch {
-		return [];
+		return null;
 	}
+}
+
+/**
+ * 解析模型配置："provider/modelId" → {provider, id}；"modelId" → {id}（按 id 全局匹配）。
+ * 空值或畸形（如 "a/"、"/b"）返回 null。
+ */
+export function parseModelSpec(spec: string): { provider?: string; id: string } | null {
+	const trimmed = spec.trim();
+	if (!trimmed) return null;
+	const slash = trimmed.indexOf("/");
+	if (slash === -1) return { id: trimmed };
+	const provider = trimmed.slice(0, slash).trim();
+	const id = trimmed.slice(slash + 1).trim();
+	if (!provider || !id) return null;
+	return { provider, id };
 }
 
 export interface ExtractSaveResult {
@@ -102,7 +120,7 @@ export class Extractor {
 		this.lastRunAt = now;
 		this.running = true;
 		try {
-			const model = ctx.model;
+			const model = this.resolveModel(ctx);
 			if (!model) return 0;
 			const response = await ctx.modelRegistry.complete(
 				model,
@@ -120,6 +138,10 @@ export class Extractor {
 				.map((c) => c.text)
 				.join("");
 			const items = parseItems(text);
+			if (items === null) {
+				this.log("extract_parse_failed", { text: text.slice(0, 200) });
+				return 0;
+			}
 			const cwd = ctx.cwd ?? process.cwd();
 			let saved = 0;
 			for (const item of items) {
@@ -144,6 +166,31 @@ export class Extractor {
 		} finally {
 			this.running = false;
 		}
+	}
+
+	/**
+	 * 解析提取用模型：cfg.extractModel 配置（"provider/modelId" 或 "modelId"）优先，
+	 * 未配置/畸形/未找到时回退当前会话模型，失败原因进 debug log、不阻断沉淀。
+	 */
+	private resolveModel(ctx: ExtensionContext): Model<Api> | undefined {
+		const fallback = ctx.model;
+		const spec = this.cfg.extractModel;
+		if (!spec) return fallback;
+		const parsed = parseModelSpec(spec);
+		if (!parsed) {
+			this.log("extract_model_spec_invalid", { spec });
+			return fallback;
+		}
+		const all = ctx.modelRegistry.getAll();
+		const model = parsed.provider
+			? ctx.modelRegistry.find(parsed.provider, parsed.id)
+			: (all.find((m) => m.id === parsed.id && m.provider === fallback?.provider) ??
+				all.find((m) => m.id === parsed.id));
+		if (!model) {
+			this.log("extract_model_not_found", { spec });
+			return fallback;
+		}
+		return model;
 	}
 
 	/** 从游标处向后收集对话摘要；超上限时保最近（倒序收集再反转） */
