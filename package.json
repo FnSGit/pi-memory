@@ -1,0 +1,40 @@
+{
+  "name": "pi-memory",
+  "version": "0.1.0",
+  "description": "Cross-session memory extension for pi: layered memory (preference / knowledge / project) on RuVector + local bge-small-zh embeddings. Manual tools + session-start injection + LLM auto-extraction.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "memory",
+    "ruvector",
+    "embedding",
+    "agent"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "smoke": "node test/smoke.ts",
+    "worker-smoke": "node test/worker-smoke.ts"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.0",
+    "ruvector": "^0.3.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0"
+  }
+}
